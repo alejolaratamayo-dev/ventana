@@ -1,0 +1,46 @@
+name: Crear APK
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Preparar proyecto
+        run: |
+          mkdir www
+          cp index.html www/index.html
+          echo '{"appId":"com.laventana.hamburguesa","appName":"La Ventana de la Hamburguesa","webDir":"www","backgroundColor":"#0F0A06"}' > capacitor.config.json
+          npm init -y
+          npm install @capacitor/core@8 @capacitor/cli@8 @capacitor/android@8
+          npx cap add android
+      - name: Ícono con tu logo
+        continue-on-error: true
+        run: |
+          sudo apt-get install -y imagemagick
+          mkdir assets
+          python3 -c "import re,base64;s=open('index.html',encoding='utf-8').read();open('assets/logo.jpg','wb').write(base64.b64decode(re.search(r'data:image/jpeg;base64,([^\"]+)',s).group(1)))"
+          convert assets/logo.jpg -resize 1024x1024 assets/icon-only.png
+          npx --yes @capacitor/assets generate --android --iconBackgroundColor '#0F0A06' --iconBackgroundColorDark '#0F0A06'
+      - run: npx cap sync android
+      - name: Compilar APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug
+      - name: Publicar APK
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk la-ventana.apk
+          gh release delete apk --yes --cleanup-tag || true
+          gh release create apk la-ventana.apk --title "APK La Ventana" --notes "APK de prueba. Descárgalo e instálalo en Android."
